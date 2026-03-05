@@ -38,7 +38,7 @@ func handleConnection(connection net.Conn) {
 	mu.Lock()
 	connections = append(connections, connection)
 	mu.Unlock()
-	fmt.Printf("Connection: %s\n", connection.RemoteAddr().String())
+	fmt.Printf("Joined: %s\n", connection.RemoteAddr().String())
 
 	temp := make([]byte, 4096)
 
@@ -52,6 +52,7 @@ func handleConnection(connection net.Conn) {
 			mu.Lock()
 			for i, c := range connections {
 				if c == connection {
+					fmt.Printf("Left: %s\n", connection.RemoteAddr().String())
 					connections = append(connections[:i], connections[i+1:]...)
 					break
 				}

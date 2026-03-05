@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"io"
 	"log"
 	"net"
@@ -29,12 +30,16 @@ func main() {
 
 	defer connection.Close()
 
-	_, err = connection.Write([]byte("Wooohooo"))
-	if err != nil {
-		log.Fatal(err)
-	}
+	go handleMessage(connection)
 
-	var received []byte
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		input := scanner.Text()
+		connection.Write([]byte(input))
+	}
+}
+
+func handleMessage(connection *net.TCPConn) {
 	for {
 		temp := make([]byte, 4096)
 		n, err := connection.Read(temp)
@@ -46,9 +51,7 @@ func main() {
 			os.Exit(1)
 		}
 		if n > 0 {
-			println("Reading data...")
-			received = append(received, temp[:n]...)
-			println("Received message:", string(received))
+			println("Received message:", string(temp[:n]))
 		}
 	}
 }

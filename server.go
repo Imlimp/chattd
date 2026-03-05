@@ -5,6 +5,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
+)
+
+var (
+	connections []net.Conn
+	mu          sync.Mutex
 )
 
 func main() {
@@ -29,23 +35,39 @@ func main() {
 }
 
 func handleConnection(connection net.Conn) {
+	mu.Lock()
+	connections = append(connections, connection)
+	mu.Unlock()
 	fmt.Printf("Connection: %s\n", connection.RemoteAddr().String())
 
-	var packet []byte
 	temp := make([]byte, 4096)
 
 	defer connection.Close()
 	for {
-		n, err := connection.Read(temp)
+		_, err := connection.Read(temp)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("read error:", err)
 			}
-			println("END OF FILE")
+			mu.Lock()
+			for i, c := range connections {
+				if c == connection {
+					connections = append(connections[:i], connections[i+1:]...)
+					break
+				}
+			}
+			mu.Unlock()
 			break
 		}
-		packet = append(packet, temp[:n]...)
-		num, _ := connection.Write(packet)
-		fmt.Printf("Answered back %d, the payload is %s\n", num, string(packet))
+		mu.Lock()
+		connectionsCopy := make([]net.Conn, len(connections))
+		copy(connectionsCopy, connections)
+		mu.Unlock()
+
+		for _, c := range connectionsCopy {
+			if c != connection {
+				c.Write(temp)
+			}
+		}
 	}
 }

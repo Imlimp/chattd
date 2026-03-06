@@ -1,13 +1,15 @@
-//go:build ignore
-
 package main
 
 import (
 	"bufio"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+
+	"github.com/Imlimp/chattd/message"
 )
 
 const (
@@ -17,6 +19,14 @@ const (
 )
 
 func main() {
+	println("What is your name?")
+	scanner := bufio.NewScanner(os.Stdin)
+	var name string
+	if scanner.Scan() {
+		input := scanner.Text()
+		name = string(input)
+	}
+
 	address := HOST + ":" + PORT
 	tcpServer, err := net.ResolveTCPAddr(TYPE, address)
 	if err != nil {
@@ -32,10 +42,16 @@ func main() {
 
 	go handleMessage(connection)
 
-	scanner := bufio.NewScanner(os.Stdin)
+	msg := message.Message{
+		Type:    message.MsgText,
+		Content: "",
+		Name:    name,
+	}
 	for scanner.Scan() {
 		input := scanner.Text()
-		connection.Write([]byte(input))
+		msg.Content = string(input)
+		data, _ := json.Marshal(msg)
+		connection.Write(data)
 	}
 }
 
@@ -51,7 +67,9 @@ func handleMessage(connection *net.TCPConn) {
 			os.Exit(1)
 		}
 		if n > 0 {
-			println("Received message:", string(temp[:n]))
+			var message message.Message
+			json.Unmarshal(temp[:n], &message)
+			fmt.Printf("%s: %s\n", message.Name, message.Content)
 		}
 	}
 }

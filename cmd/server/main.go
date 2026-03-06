@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"sync"
+
+	"github.com/Imlimp/chattd/message"
 )
 
 var (
@@ -44,7 +47,7 @@ func handleConnection(connection net.Conn) {
 
 	defer connection.Close()
 	for {
-		_, err := connection.Read(temp)
+		n, err := connection.Read(temp)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("read error:", err)
@@ -60,6 +63,10 @@ func handleConnection(connection net.Conn) {
 			mu.Unlock()
 			break
 		}
+
+		var msg message.Message
+		json.Unmarshal(temp[:n], &msg)
+
 		mu.Lock()
 		connectionsCopy := make([]net.Conn, len(connections))
 		copy(connectionsCopy, connections)
@@ -67,7 +74,8 @@ func handleConnection(connection net.Conn) {
 
 		for _, c := range connectionsCopy {
 			if c != connection {
-				c.Write(temp)
+				data, _ := json.Marshal(msg)
+				c.Write(data)
 			}
 		}
 	}

@@ -64,8 +64,8 @@ func handleConnection(connection net.Conn) {
 			break
 		}
 
-		var msg message.Message
-		json.Unmarshal(temp[:n], &msg)
+		var message message.Message
+		json.Unmarshal(temp[:n], &message)
 
 		mu.Lock()
 		connectionsCopy := make([]net.Conn, len(connections))
@@ -74,7 +74,7 @@ func handleConnection(connection net.Conn) {
 
 		for _, c := range connectionsCopy {
 			if c != connection {
-				data, _ := json.Marshal(msg)
+				data, _ := json.Marshal(message)
 				c.Write(data)
 			}
 		}

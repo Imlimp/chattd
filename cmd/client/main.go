@@ -42,15 +42,14 @@ func main() {
 
 	go handleMessage(connection)
 
-	msg := message.Message{
-		Type:    message.MsgText,
-		Content: "",
-		Name:    name,
+	message := message.Message{
+		Type: message.MsgText,
+		Name: name,
 	}
 	for scanner.Scan() {
 		input := scanner.Text()
-		msg.Content = string(input)
-		data, _ := json.Marshal(msg)
+		message.Content = string(input)
+		data, _ := json.Marshal(message)
 		connection.Write(data)
 	}
 }

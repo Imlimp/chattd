@@ -11,9 +11,17 @@ import (
 	"github.com/Imlimp/chattd/message"
 )
 
+type Lobby struct {
+	ID      string
+	Name    string
+	Members map[net.Conn]bool
+}
+
 var (
-	connections []net.Conn
-	mu          sync.Mutex
+	lobbies     = make(map[string]*Lobby)
+	lobbyMu     sync.Mutex
+	connections = make(map[net.Conn]string)
+	connMu      sync.Mutex
 )
 
 func main() {
@@ -38,45 +46,143 @@ func main() {
 }
 
 func handleConnection(connection net.Conn) {
-	mu.Lock()
-	connections = append(connections, connection)
-	mu.Unlock()
-	fmt.Printf("Joined: %s\n", connection.RemoteAddr().String())
+	fmt.Printf("Joined: %s sending lobby prompt\n", connection.RemoteAddr().String())
+
+	lobbyPromptMessage := message.Message{
+		Type: message.MsgLobbyPrompt,
+	}
+	data, _ := json.Marshal(lobbyPromptMessage)
+	connection.Write(data)
 
 	temp := make([]byte, 4096)
+	n, err := connection.Read(temp)
+	if err != nil {
+		if err == io.EOF {
+			return
+		}
+		println("Failed to receive data.", err.Error())
+		return
+	}
+	if n > 0 {
+		var msg message.Message
+		json.Unmarshal(temp[:n], &msg)
 
-	defer connection.Close()
+		switch msg.Type {
+		case message.MsgLobbyJoin:
+			lobbyID := msg.LobbyID
+			lobbyMu.Lock()
+			lobby, exists := lobbies[lobbyID]
+			lobbyMu.Unlock()
+			if !exists {
+				errorMsg := message.Message{
+					Type:    message.MsgError,
+					Content: "Lobby not found",
+				}
+				data, _ := json.Marshal(errorMsg)
+				connection.Write(data)
+				return
+			}
+			lobby.Members[connection] = true
+			connMu.Lock()
+			connections[connection] = lobbyID
+			connMu.Unlock()
+			joinedMsg := message.Message{
+				Type:    message.MsgLobbyJoined,
+				LobbyID: lobbyID,
+			}
+			data, _ := json.Marshal(joinedMsg)
+			connection.Write(data)
+			handleChat(connection, lobbyID)
+		case message.MsgLobbyCreate:
+			lobbyID := msg.LobbyID
+			newLobby := &Lobby{
+				ID:      lobbyID,
+				Name:    lobbyID,
+				Members: make(map[net.Conn]bool),
+			}
+			newLobby.Members[connection] = true
+			lobbyMu.Lock()
+			lobbies[lobbyID] = newLobby
+			lobbyMu.Unlock()
+			connMu.Lock()
+			connections[connection] = lobbyID
+			connMu.Unlock()
+			joinedMsg := message.Message{
+				Type:    message.MsgLobbyJoined,
+				LobbyID: lobbyID,
+			}
+			data, _ := json.Marshal(joinedMsg)
+			connection.Write(data)
+			handleChat(connection, lobbyID)
+		case message.MsgLobbyList:
+			lobbyMu.Lock()
+			var lobbyIDs []string
+			for id := range lobbies {
+				lobbyIDs = append(lobbyIDs, id)
+			}
+			lobbyMu.Unlock()
+			listMsg := message.LobbyListMessage{
+				Type:    message.MsgLobbyList,
+				Lobbies: lobbyIDs,
+			}
+			data, _ := json.Marshal(listMsg)
+			connection.Write(data)
+			handleConnection(connection)
+		}
+	}
+
+	connection.Close()
+}
+
+func handleChat(connection net.Conn, lobbyID string) {
+	temp := make([]byte, 4096)
+	defer func() {
+		lobbyMu.Lock()
+		lobby := lobbies[lobbyID]
+		if lobby != nil {
+			delete(lobby.Members, connection)
+			if len(lobby.Members) == 0 {
+				delete(lobbies, lobbyID)
+			}
+		}
+		lobbyMu.Unlock()
+		connMu.Lock()
+		delete(connections, connection)
+		connMu.Unlock()
+		fmt.Printf("Left: %s\n", connection.RemoteAddr().String())
+		connection.Close()
+	}()
+
 	for {
 		n, err := connection.Read(temp)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("read error:", err)
 			}
-			mu.Lock()
-			for i, c := range connections {
-				if c == connection {
-					fmt.Printf("Left: %s\n", connection.RemoteAddr().String())
-					connections = append(connections[:i], connections[i+1:]...)
-					break
-				}
-			}
-			mu.Unlock()
 			break
 		}
 
-		var message message.Message
-		json.Unmarshal(temp[:n], &message)
+		var msg message.Message
+		json.Unmarshal(temp[:n], &msg)
+		msg.LobbyID = lobbyID
 
-		mu.Lock()
-		connectionsCopy := make([]net.Conn, len(connections))
-		copy(connectionsCopy, connections)
-		mu.Unlock()
+		broadcastToLobby(lobbyID, msg, connection)
+	}
+}
 
-		for _, c := range connectionsCopy {
-			if c != connection {
-				data, _ := json.Marshal(message)
-				c.Write(data)
-			}
+func broadcastToLobby(lobbyID string, msg message.Message, exclude net.Conn) {
+	lobbyMu.Lock()
+	lobby := lobbies[lobbyID]
+	lobbyMu.Unlock()
+
+	if lobby == nil {
+		return
+	}
+
+	data, _ := json.Marshal(msg)
+	for conn := range lobby.Members {
+		if conn != exclude {
+			conn.Write(data)
 		}
 	}
 }

@@ -10,16 +10,25 @@ import (
 	"os"
 
 	"github.com/Imlimp/chattd/message"
+	"github.com/joho/godotenv"
 )
 
 const (
-	HOST = "localhost"
-	PORT = "5012"
 	TYPE = "tcp4"
 )
 
 func main() {
-	address := HOST + ":" + PORT
+	godotenv.Load(".env", "../.env")
+
+	host := os.Getenv("CHAT_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("CHAT_PORT")
+	if port == "" {
+		port = "5012"
+	}
+	address := host + ":" + port
 	tcpServer, err := net.ResolveTCPAddr(TYPE, address)
 	if err != nil {
 		log.Fatal(err)
